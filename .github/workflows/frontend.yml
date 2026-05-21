@@ -24,7 +24,7 @@ jobs:
         run: |
           set -e
 
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/frontend_app:latest ./back-ventas_springboot
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/frontend_app:latest ./frontend_app
           
       - name: Push Docker images
         run: |
