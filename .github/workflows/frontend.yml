@@ -1,6 +1,70 @@
+name: Build, Push and Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Paso 1: Descargar el código del repositorio
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Paso 2: Autenticarse en DockerHub
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Paso 3: Construir la imagen Docker del frontend
+      - name: Build Docker image
+        run: |
+          set -e
+
+          echo "Validando estructura del repositorio..."
+          ls -la
+          ls -la ./front_despacho
+
+          echo "Construyendo imagen Docker del frontend..."
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest ./front_despacho
+
+      # Paso 4: Subir la imagen a DockerHub
+      - name: Push Docker image
+        run: |
+          set -e
+
+          echo "Subiendo imagen a DockerHub..."
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
+
+      # Paso 5: Configurar credenciales AWS
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      # Paso 6: Agregar llave SSH para conectarse a EC2
+      - name: Add SSH Key
+        run: |
+          set -e
+
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY_FRONTEND }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      # Paso 7: Conectarse a EC2 y desplegar el frontend
       - name: Deploy frontend in EC2
         run: |
           set -e
+
           ssh -i ~/.ssh/id_rsa \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
