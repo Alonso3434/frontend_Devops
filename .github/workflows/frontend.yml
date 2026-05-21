@@ -11,27 +11,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Paso 1: Descargar el código del repositorio
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Paso 2: Autenticarse en DockerHub
       - name: Log in to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker images
+      # Paso 3: Construir la imagen Docker del frontend
+      - name: Build Docker image
         run: |
           set -e
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest .
 
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/frontend_app:latest ./frontend_app
-          
-      - name: Push Docker images
+      # Paso 4: Subir la imagen a DockerHub
+      - name: Push Docker image
         run: |
           set -e
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
 
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/frontend_app:latest
-          
+      # Paso 5: Configurar credenciales AWS
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -40,38 +43,18 @@ jobs:
           aws-region: us-east-1
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
 
+      # Paso 6: Agregar llave SSH para conectarse a EC2
       - name: Add SSH Key
         run: |
           set -e
-
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY_FRONTEND }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-      - name: Create deployment folder in EC2
+      # Paso 7: Conectarse a EC2 y desplegar el frontend
+      - name: Deploy frontend in EC2
         run: |
           set -e
-
-          ssh -i ~/.ssh/id_rsa \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST_FRONTEND }} \
-            "mkdir -p ~/proyectodevops-frontend"
-
-      - name: Copy docker-compose to EC2
-        run: |
-          set -e
-
-          scp -i ~/.ssh/id_rsa \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            docker-compose.yml \
-            ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST_FRONTEND }}:~/proyectodevops/docker-compose.yml
-
-      - name: Deploy stack in EC2
-        run: |
-          set -e
-
           ssh -i ~/.ssh/id_rsa \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
@@ -79,54 +62,45 @@ jobs:
 
             set -e
 
-            cd ~/proyectodevops-frontend
-
-            echo "Validando docker..."
+            echo "Validando Docker..."
             docker --version
 
-            echo "Validando docker-compose..."
-            if ! command -v docker-compose >/dev/null 2>&1; then
-              echo "ERROR: docker-compose no está instalado en la EC2"
-              exit 1
-            fi
-
-            docker-compose --version
-
-            echo "Creando archivo .env..."
-            echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" > .env
-
-            echo "Autenticando en Docker Hub..."
+            echo "Autenticando en DockerHub..."
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-            echo "Descargando imágenes desde Docker Hub..."
-            docker-compose pull
+            echo "Descargando última imagen del frontend..."
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
 
-            echo "Deteniendo stack anterior..."
-            docker-compose down
+            echo "Deteniendo contenedor anterior..."
+            docker stop despacho-frontend || true
 
-            echo "Levantando stack actualizado..."
-            docker-compose up -d
+            echo "Eliminando contenedor anterior..."
+            docker rm despacho-frontend || true
 
-            echo "Esperando inicio de servicios..."
-            sleep 30
+            echo "Levantando nuevo contenedor..."
+            docker run -d \
+              --name despacho-frontend \
+              --restart unless-stopped \
+              -p 8080:80 \
+              ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
 
-            echo "Estado de contenedores:"
-            docker-compose ps
+            echo "Estado del contenedor:"
+            docker ps --filter "name=despacho-frontend"
 
-            echo "Validando contenedores activos..."
-            docker ps --format '{{.Names}}' | grep -q "frontend_app || { echo "ERROR: frontend_app no está activo"; exit 1; }
-            echo "Validando endpoints internos..."
+            echo "Validando que el contenedor esté activo..."
+            docker ps --format '{{.Names}}' | grep -q "despacho-frontend" || { echo "ERROR: despacho-frontend no está activo"; exit 1; }
+
+            echo "Validando respuesta HTTP del frontend..."
             if ! command -v curl >/dev/null 2>&1; then
               echo "ERROR: curl no está instalado en la EC2"
               exit 1
             fi
 
-            curl -f http://localhost:3002/api/ventas/health
+            curl -f http://localhost:8080
 
             echo "Limpiando imágenes no utilizadas..."
             docker image prune -f
 
-            echo "Despliegue finalizado correctamente"
+            echo "Despliegue del frontend finalizado correctamente"
 
-            
           EOF
