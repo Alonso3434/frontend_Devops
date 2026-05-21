@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+    db:
+      image: postgres:15-alpine
+      container_name: db_proyecto
+      environment:
+        POSTGRES_USER: user_devops
+        POSTGRES_PASSWORD: password123
+        POSTGRES_DB: base_datos_app
+      volumes:
+        - db_data:/var/lib/postgresql/data
+      networks:
+        - red_interna
+
+    back-ventas:
+      build: ./back-ventas_springboot
+      container_name: backend_ventas
+      environment:
+        SPRING_DATASOURCE_URL: jdbc:mysql://db-ventas:3306/tienda_Ventas
+        SPRING_DATASOURCE_USERNAME: user_devops
+        SPRING_DATASOURCE_PASSWORD: password123
+      depends_on:
+        - db
+      networks:
+        - red_interna
+
+    back-despachos:
+      build: ./back-despachos_springboot
+      container_name: backend_despachos
+      environment:
+        SPRING_DATASOURCE_URL: jdbc:mysql://db-ventas:3306/tienda_Despachos
+        SPRING_DATASOURCE_USERNAME: user_devops
+        SPRING_DATASOURCE_PASSWORD: password123
+      depends_on:
+        - db
+      networks:
+        - red_interna
+
+networks:
+  red_interna:
+    driver: bridge
+
+volumes:
+  db_data:
