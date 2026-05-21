@@ -1,50 +1,3 @@
-name: Build, Push and Deploy Frontend
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log in to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build Docker image
-        run: |
-          set -e
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest ./front_despacho
-
-      - name: Push Docker image
-        run: |
-          set -e
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
-
-      - name: Set up AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-
-      - name: Add SSH Key
-        run: |
-          set -e
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY_FRONTEND }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
       - name: Deploy frontend in EC2
         run: |
           set -e
@@ -56,32 +9,32 @@ jobs:
             set -e
 
             echo "Validando Docker..."
-            docker --version
+            sudo docker --version
 
             echo "Autenticando en DockerHub..."
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
             echo "Descargando última imagen del frontend..."
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
 
             echo "Deteniendo contenedor anterior..."
-            docker stop despacho-frontend || true
+            sudo docker stop despacho-frontend || true
 
             echo "Eliminando contenedor anterior..."
-            docker rm despacho-frontend || true
+            sudo docker rm despacho-frontend || true
 
             echo "Levantando nuevo contenedor..."
-            docker run -d \
+            sudo docker run -d \
               --name despacho-frontend \
               --restart unless-stopped \
               -p 8080:80 \
               ${{ secrets.DOCKERHUB_USERNAME }}/despacho-frontend:latest
 
             echo "Estado del contenedor:"
-            docker ps --filter "name=despacho-frontend"
+            sudo docker ps --filter "name=despacho-frontend"
 
             echo "Validando que el contenedor esté activo..."
-            docker ps --format '{{.Names}}' | grep -q "despacho-frontend" || { echo "ERROR: despacho-frontend no está activo"; exit 1; }
+            sudo docker ps --format '{{.Names}}' | grep -q "despacho-frontend" || { echo "ERROR: despacho-frontend no está activo"; exit 1; }
 
             echo "Validando respuesta HTTP del frontend..."
             if ! command -v curl >/dev/null 2>&1; then
@@ -92,7 +45,7 @@ jobs:
             curl -f http://localhost:8080
 
             echo "Limpiando imágenes no utilizadas..."
-            docker image prune -f
+            sudo docker image prune -f
 
             echo "Despliegue del frontend finalizado correctamente"
 
